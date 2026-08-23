@@ -1,0 +1,46 @@
+version: "3.7"
+services:
+  # 1. Spark Master Node (Using Bde-Spark Image)
+  ## Spark master is the manager which is resp. for managing all the nodes to which the data is distributed
+  spark-master:
+    image: bde2020/spark-master:3.3.0-hadoop3.3
+    container_name: spark-master
+    hostname: spark-master
+    ports:
+      - "8080:8080"  # Spark Master Web UI
+      - "7077:7077"  # Spark Master communication port , using which workers node communicates with master node
+    volumes:
+      - ./code:/code         # PySpark scripts
+      - ./data:/data         # CSV data
+    environment:
+      # These variables are needed for the worker connection
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+    networks:
+      - spark-net
+
+  # 2. Spark Worker Node Template (Using Bde-Spark Image)
+  ## These are smaller containers 
+  ## Each worker has a different container 
+  ## Workers obey the spark master which tells them to operate certain things on the data 
+  spark-worker:
+    image: bde2020/spark-worker:3.3.0-hadoop3.3
+    volumes:
+      - ./code:/code
+      - ./data:/data
+    environment:
+      # Link worker to the master
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1g
+    depends_on:
+      - spark-master
+    networks:
+      - spark-net
+
+  # We will omit the History Server for now to simplify and ensure basic functionality.
+  # We can add it back later once the 4-node cluster is confirmed running.
+
+networks:
+  spark-net:
+    driver: bridge

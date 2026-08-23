@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Spark generated output
+**/_SUCCESS
+**/*.crc
+**/part-*
+**/metadata/
+**/bestModel/
+
+# Generated ML models
+code/lr_model_for_demo_v2/
+code/rf_best_model/
+
+# Generated analysis results
+data/results/
+
+# Large raw datasets
+data/*.csv
+
+# OS files
+.DS_Store
+._*
