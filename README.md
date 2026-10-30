@@ -264,23 +264,6 @@ docker compose exec spark-master /spark/bin/spark-submit \
   /code/flight_prediction.py
 ```
 
----
-
-## Key Interview Discussion Points
-
-When discussing this project in engineering and data science interviews:
-
-1. **Why Spark instead of single-node libraries like Pandas or Polars?**
-   While modern tools like Polars handle out-of-core memory on single machines, Spark provides true distributed scale-out capability. As flight data scales from 1 year (~7M rows) to 10 years (~70M+ rows), Spark scales horizontally by adding worker nodes rather than vertically upgrading expensive server RAM.
-2. **How is data leakage avoided?**
-   Features derived from the flight outcome (e.g., `ARR_DELAY`, actual departure timestamps, cancellation reasons) are strictly excluded from the prediction feature vector. Only scheduled features (`CRS_DEP_TIME`, `DISTANCE`, `FL_MONTH`, historical airport delay averages) available prior to flight departure are utilized.
-3. **How does distributed CrossValidator work in Spark?**
-   Spark constructs an RDD of model configurations from `ParamGridBuilder`. With `parallelism=2`, Spark submits multiple training tasks simultaneously across available worker cores, drastically reducing grid-search latency compared to sequential Scikit-Learn evaluation.
-4. **Driver vs. Worker Memory Management:**
-   Heavy computation (filtering, schema transformations, feature scaling, aggregation) occurs strictly on worker nodes. The driver program only receives final aggregated metric tables via `part-*.csv` outputs, keeping driver memory overhead low.
-
----
-
 ## Author
 
 **Tanay Bhomia**  
