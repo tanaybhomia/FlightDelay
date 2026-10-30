@@ -127,6 +127,54 @@ $$\text{IS\_DELAYED} = \begin{cases} 1 & \text{if } \text{DEP\_DELAY} > 15 \\ 0 
 
 ---
 
+## Feature Dictionary & Schema Overview
+
+To provide clear visibility into the data processed across the pipeline, the features are organized into raw operational attributes, engineered features, and the machine learning feature set.
+
+### 1. Raw Operational Attributes
+
+| Field Name | Data Type | Description | Role in Pipeline |
+| :--- | :--- | :--- | :--- |
+| `fl_date` | Timestamp | Scheduled flight date and timestamp | Used to extract seasonal (`FL_MONTH`) and time attributes. |
+| `op_unique_carrier` | String | Operating airline carrier reporting code (e.g., AA, DL, UA) | Primary feature for carrier delay analysis and ML indexing. |
+| `origin` | String | 3-letter IATA origin airport code (e.g., JFK, ORD) | Categorical routing feature and basis for airport delay aggregations. |
+| `dest` | String | 3-letter IATA destination airport code (e.g., LAX, MIA) | Categorical destination feature encoded for ML prediction. |
+| `CRS_DEP_TIME` | Double / Numeric | Scheduled computer reservation departure time (HHMM format) | Parsed via custom Spark UDF to extract 24-hour departure hour (`DEP_HOUR`). |
+| `DEP_DELAY` | Double (Minutes) | Departure delay (negative = early, positive = minutes late) | Ground-truth departure metric; basis for the target label `IS_DELAYED`. |
+| `ARR_DELAY` | Double (Minutes) | Arrival delay (negative = early, positive = minutes late) | Used for arrival vs. departure correlation; excluded from ML to prevent leakage. |
+| `AIR_TIME` | Integer (Minutes) | Airborne flight duration in minutes | Ingested and cleaned for flight duration profiling. |
+| `DISTANCE` | Integer (Miles) | Distance between origin and destination airports | Continuous numerical feature in ML models; basis for distance groups. |
+| `carrier_delay` | Double (Minutes) | Minutes delayed due to airline operational circumstances | Ingested for primary delay cause distribution analysis. |
+| `weather_delay` | Double (Minutes) | Minutes delayed due to significant meteorological conditions | Ingested for primary delay cause distribution analysis. |
+| `nas_delay` | Double (Minutes) | Minutes delayed by National Airspace System / ATC | Ingested for primary delay cause distribution analysis. |
+| `security_delay` | Double (Minutes) | Minutes delayed due to security breaches or re-screening | Ingested for primary delay cause distribution analysis. |
+| `late_aircraft_delay` | Double (Minutes) | Minutes delayed due to downstream arrival of previous aircraft | Ingested for primary delay cause distribution analysis. |
+
+### 2. Engineered Features & Derived Metrics
+
+| Feature Name | Type | Derivation Logic / Spark Transformation | Analytical / ML Rationale |
+| :--- | :--- | :--- | :--- |
+| `IS_DELAYED` | Binary (0 / 1) | `when(col("DEP_DELAY") > 15, 1).otherwise(0)` | **Target Label:** Industry-standard binary classification label based on FAA/BTS guidelines (>15 min delay). |
+| `DEP_HOUR` | Integer (0–23) | `value // 100` via Spark UDF on `CRS_DEP_TIME` | Captures intra-day compounding delay curves and peak departure windows. |
+| `FL_MONTH` | Integer (1–12) | `month(col("fl_date"))` | Captures annual seasonality and holiday travel volume spikes. |
+| `DISTANCE_GROUP` | String | Binned: `<500 mi` (Short), `500–2000 mi` (Medium), `>2000 mi` (Long) | Categorical breakdown to analyze network route delay patterns. |
+| `Avg_Delay_Origin` | Double (Minutes) | `groupBy("origin").agg(avg("DEP_DELAY"))` joined on `origin` | **Airport Congestion Proxy:** Historical average delay for the departing airport, providing ground-delay context. |
+| `MAX_DELAY_MIN` | Double (Minutes) | `greatest(*delay_cols)` across the 5 delay cause fields | Identifies the dominant delay component for each delayed flight. |
+| `PRIMARY_DELAY_CAUSE` | Categorical | Conditional `when()` mapping `MAX_DELAY_MIN` to cause name | Categorizes root cause into Carrier, Weather, NAS, Security, or Late Aircraft. |
+
+### 3. Machine Learning Feature Set & Leakage Prevention Matrix
+
+To train an operationally realistic prediction model, features must only reflect information known **prior to flight pushback**.
+
+| Category | Features Included in ML Model Vector | Excluded Features (Data Leakage Prevention) |
+| :--- | :--- | :--- |
+| **Categorical (StringIndexer)** | `origin`, `dest`, `op_unique_carrier` | `FL_NUM`, `TAIL_NUM` (high cardinality noise, overfits specific aircraft) |
+| **Continuous / Numerical (StandardScaler)** | `DISTANCE`, `DEP_HOUR`, `FL_MONTH`, `Avg_Delay_Origin` | `DEP_DELAY`, `ARR_DELAY` (direct target leakage) |
+| **Operational Causes** | *None* (unknown prior to flight) | `carrier_delay`, `weather_delay`, `nas_delay`, `security_delay`, `late_aircraft_delay` |
+| **Target Variable** | `IS_DELAYED` (Binary label: 1 if `DEP_DELAY > 15`, else 0) | `CANCELLATION_CODE` (only exists if flight never departed) |
+
+---
+
 ## Analytical Visualizations & Key Insights
 
 The following visualizations were produced by running distributed Spark aggregations over the complete 2024 dataset, saving partitioned results, and rendering publication-ready figures using Seaborn and Matplotlib.
@@ -263,6 +311,8 @@ docker compose exec spark-master /spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /code/flight_prediction.py
 ```
+
+---
 
 ## Author
 
