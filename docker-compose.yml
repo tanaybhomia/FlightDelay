@@ -10,8 +10,8 @@ services:
       - "8080:8080"  # Spark Master Web UI
       - "7077:7077"  # Spark Master communication port , using which workers node communicates with master node
     volumes:
-      - ./code:/code         # PySpark scripts
-      - ./data:/data         # CSV data
+      - ./code:/code         # PySpark scripts, Binds the ./code from computer to the ./code inside the container
+      - ./data:/data         # CSV data , does the same binding
     environment:
       # These variables are needed for the worker connection
       - SPARK_MASTER_HOST=spark-master

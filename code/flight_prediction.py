@@ -42,18 +42,15 @@ df_clean = df.withColumn("DEP_DELAY", col("dep_delay").cast(DoubleType())) \
 
 # Impute Null delays with 0
 ## Imputation is the process of replacing missing values with substituted values
-## Syntax for fillna is value , subset
-## subset = which columns to be affected 
 df_clean = df_clean.fillna(0, subset=['DEP_DELAY', 'ARR_DELAY'])
 # Drop rows where origin/dest is null (needed for StringIndexer)
 df_clean = df_clean.dropna(subset=['origin', 'dest', 'op_unique_carrier'])
 
-# Create target variable and time features
-# NOTE: you previously used DEP_DELAY; if you want to use ARR_DELAY instead, change here.
+# --- Target Variable ---
 df_clean = df_clean.withColumn("IS_DELAYED", when(col("DEP_DELAY") > 15, 1).otherwise(0))
-# Create hour and month from fl_date + crs_dep_time would be preferred; using fl_date hour/month directly if available
-# If fl_date is a string date, extracting hour from it is incorrect — you should construct sched time; but we follow your prior code:
-df_clean = df_clean.withColumn("DEP_HOUR", hour(col("fl_date")))   # if fl_date is date
+
+# --- [Feature Eng] Create hour and month from fl_date ---
+df_clean = df_clean.withColumn("DEP_HOUR", hour(col("fl_date"))) 
 df_clean = df_clean.withColumn("FL_MONTH", month(col("fl_date")))
 
 # --- 3. NEW FEATURE ENGINEERING: AVG DELAY BY ORIGIN AIRPORT ---
@@ -69,6 +66,8 @@ df_clean = df_clean.join(avg_delay_by_origin, on="origin", how="left")
 categorical_cols = ["origin", "dest", "op_unique_carrier"]
 numerical_cols = ["DISTANCE", "DEP_HOUR", "FL_MONTH", "Avg_Delay_Origin"]
 
+# --- StringIndexer --- 
+
 # A. Handle Categorical Features using StringIndexer
 # What we did here is to make the algorithm understand we used the string indexer and ran it through the columns which are the categorical features and we made new columns with suffix _idx which created a new column like this JFK_1 so that algorithm understands and uses numbers for each origin , dest and op unique 
 # Another thing to keep in mind is that this is not a feature created but rather only objets 
@@ -77,12 +76,16 @@ indexers = [
     for c in categorical_cols
 ]
 
+# --- VectorAssembler --- 
+
 # B. Assemble all feature columns into a single vector
 ## the first line just creates a new list which contains all the categoricalcol_idx and numerical columns and these are just the column names
 feature_cols = [c + "_idx" for c in categorical_cols] + numerical_cols
 
 ## WE here create a feature vector, Which contains the data in a vector form rather than having age=20,attendence=90 it just creates a verctor [20,90] again this just like the stringindexer creates a object receipie which will then used in the pipeline
 assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_unscaled")
+
+# --- Standard Scalar ---
 
 # C. Scale Numerical Features
 ## Performs standardization and does not execute immediately but rather just executes when it is called in the piepline
@@ -101,6 +104,9 @@ scaler = StandardScaler(
     withMean=False
 )
 
+
+
+
 # --- 5. Define the Machine Learning Pipeline ---
 # We just create a pipeline where the satges means execute the pipeline in this order
 pipeline = Pipeline(stages=indexers + [assembler, scaler])
@@ -108,6 +114,7 @@ pipeline = Pipeline(stages=indexers + [assembler, scaler])
 ## The piepline mode is not responsible for handling or holding the data but is only needed to keep the mappings like JFK-0 
 print("Training feature engineering pipeline")
 pipeline_model = pipeline.fit(df_clean)
+## As soon as we fit the data the stringindexer learns the mapping for all the categorical columns 
 df_features = pipeline_model.transform(df_clean)
 
 # --- 6. Train/Test Split ---
